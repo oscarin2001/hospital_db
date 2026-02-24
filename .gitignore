@@ -1,0 +1,6 @@
+# Ignore embedded grupo2 repository directory (kept as external reference)
+grupo2/
+
+# Python cache
+__pycache__/
+*.pyc
