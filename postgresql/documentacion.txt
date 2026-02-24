@@ -1,0 +1,253 @@
+================================================================
+  DOCUMENTACION: Base de Datos Hospital - PostgreSQL 17
+  Trabajo de BD: Grupo Nuestro + Grupo 2 + Grupo 3
+================================================================
+
+1. RESUMEN DEL PROYECTO
+================================================================
+
+Se unifico la base de datos de un hospital a partir de tres fuentes:
+
+  - Grupo 3: Esquema base con datos reales (dump PostgreSQL nativo)
+    Tablas: zona, especialidad, tipo_diagnostico, persona,
+            horario_medico, cita_medica, diagnostico, receta
+    Registros: ~50,000
+
+  - Grupo 2: Esquema normalizado con catalogos y extensiones
+    Tablas: cat_genero, cat_cargo, cat_turno, cat_estado_disponibilidad,
+            cat_gravedad, cat_estado_cita, cat_metodo_pago, cat_estado_pago,
+            cat_tipo_registro, procedimiento_medico, medicamento,
+            pago, diagnostico_procedimiento, historial_clinico, receta_detalle
+    Aporta: Catalogos normalizados y tablas transaccionales adicionales
+
+  - Nuestro grupo: Datos generados con Faker (Python)
+    Agrega: 9 especialidades, 10 zonas, ~330 medicos, 30,000 pacientes,
+            50,000 citas, diagnosticos, recetas, pagos, historial clinico
+
+
+2. NORMALIZACION 3FN - COMO SE ELIMINO EL BUCLE
+================================================================
+
+PROBLEMA ORIGINAL:
+  El esquema del Grupo 3 tenia un bucle/dependencia circular:
+  
+    persona --FK--> especialidad (campo id_especialidad en persona)
+    personal --FK--> persona
+    personal --FK--> especialidad
+  
+  Esto viola 3FN porque:
+  - La especialidad es un atributo del ROL MEDICO (personal), no de la persona
+  - Un paciente no tiene especialidad, pero la columna existia en persona
+  - Generaba dependencia transitiva: persona -> especialidad (directo)
+    y persona -> personal -> especialidad (indirecto) = REDUNDANCIA
+
+SOLUCION APLICADA:
+  1. Se ELIMINO id_especialidad de la tabla persona
+  2. La especialidad queda SOLO en la tabla personal (donde corresponde)
+  3. Se crearon tablas de rol: paciente y personal
+  
+  Flujo de FK limpio (sin ciclos):
+  
+    zona <-- persona --> (datos basicos de cualquier individuo)
+                |
+                +-- paciente (rol: paciente)
+                |       |
+                |       +-- historial_clinico
+                |
+                +-- personal (rol: medico/empleado)
+                |       |
+                |       +-- especialidad
+                |       +-- cat_cargo, cat_turno, cat_estado_disponibilidad
+                |
+                +-- horario_medico
+                +-- cita_medica (id_paciente, id_medico -> ambos persona)
+                        |
+                        +-- diagnostico --> tipo_diagnostico
+                        |       |
+                        |       +-- receta --> receta_detalle --> medicamento
+                        |       +-- diagnostico_procedimiento --> procedimiento_medico
+                        |
+                        +-- pago --> cat_metodo_pago, cat_estado_pago
+
+
+3. ESTRUCTURA DE ARCHIVOS
+================================================================
+
+  db/
+    grupo2/                        <- Datos originales Grupo 2
+      recursos/
+        01_schema.sql              <- Esquema original (referencia)
+        03_seed_catalogos.sql      <- Seeds de catalogos
+        ...
+    grupo3/                        <- Datos originales Grupo 3
+      clinica_db_completa 1.sql    <- Dump PostgreSQL completo
+    postgresql/                    <- SCRIPTS DE EJECUCION
+      schema_pg.sql                <- Esquema 3NF unificado (25 tablas)
+      load_grupo3.py               <- Carga directa del dump PG de Grupo 3
+      populate_db_pg.py            <- Genera datos con Faker (nuestro grupo)
+      setup_postgresql.py          <- SCRIPT MAESTRO (ejecuta todo)
+      documentacion.txt            <- Este archivo
+
+
+4. COMO SE ADAPTO TODO
+================================================================
+
+  PASO 1 - Esquema unificado (schema_pg.sql):
+    Se tomo como base el esquema del Grupo 3 y se le agrego:
+    - Los 9 catalogos del Grupo 2 (cat_genero, cat_cargo, etc.)
+    - Las tablas de extension del Grupo 2 (pago, procedimiento_medico, etc.)
+    - Las tablas de rol: paciente y personal (separacion 3NF)
+    - Se QUITO id_especialidad de persona (movido a personal)
+    - Se agregaron CHECK constraints para validacion
+
+  PASO 2 - Carga de Grupo 3 (load_grupo3.py):
+    - Lee el dump PostgreSQL DIRECTO (no pasa por SQLite)
+    - Parsea los bloques COPY del dump
+    - Para persona: separa id_especialidad y lo guarda aparte
+    - Inserta datos con COPY FROM STDIN (rapido, nativo PG)
+    - Despues crea registros en paciente/personal segun matricula:
+      * matricula != NULL -> es medico -> va a personal (con especialidad)
+      * matricula == NULL -> es paciente -> va a paciente
+    - Tambien carga los catalogos y procedimientos/medicamentos del Grupo 2
+
+  PASO 3 - Datos propios con Faker (populate_db_pg.py):
+    - Agrega 9 especialidades nuevas (24 total)
+    - Agrega 10 zonas nuevas (30 total)
+    - Genera ~330 medicos nuevos (persona + personal)
+    - Genera 30,000 pacientes nuevos (persona + paciente)
+    - Genera 50,000 citas medicas
+    - Genera diagnosticos con enfermedades reales por especialidad
+    - Genera recetas, pagos e historial clinico
+
+
+5. COMO EJECUTAR
+================================================================
+
+  PASO 1: Iniciar PostgreSQL (PowerShell como Administrador):
+    net start postgresql-x64-17
+
+  PASO 2: Ejecutar el setup (PowerShell normal):
+    cd C:\Users\oscar\Desktop\db
+    python postgresql/setup_postgresql.py
+
+  Esto ejecuta automaticamente:
+    1. Verifica dependencias (psycopg2, faker)
+    2. Verifica PostgreSQL corriendo
+    3. Crea/recrea la BD 'hospital_db'
+    4. Carga Grupo 3 (dump PostgreSQL directo)
+    5. Genera datos con Faker (nuestro grupo)
+
+
+6. CREDENCIALES
+================================================================
+
+  Host:       localhost
+  Puerto:     5432
+  Base:       hospital_db
+  Usuario:    postgres
+  Contrasena: 1379
+
+  NOTA PARA COMPANEROS: Si tu contrasena de PostgreSQL es diferente,
+  cambiala en estos 3 archivos (busca "password"):
+    - postgresql/setup_postgresql.py  (linea ~28: PG_PASSWORD = "1379")
+    - postgresql/load_grupo3.py       (linea ~29: "password": "1379")
+    - postgresql/populate_db_pg.py    (linea ~32: "password": "1379")
+
+
+7. TABLAS (25 en total)
+================================================================
+
+  Base (Grupo 3):           Catalogos (Grupo 2):
+    zona                      cat_genero
+    especialidad               cat_cargo
+    tipo_diagnostico           cat_turno
+    persona                    cat_estado_disponibilidad
+    horario_medico             cat_gravedad
+    cita_medica                cat_estado_cita
+    diagnostico                cat_metodo_pago
+    receta                     cat_estado_pago
+                               cat_tipo_registro
+  Roles (3NF):
+    paciente                 Extension (Grupo 2):
+    personal                   procedimiento_medico
+                               medicamento
+                               pago
+                               diagnostico_procedimiento
+                               historial_clinico
+                               receta_detalle
+
+
+8. INTERFACES DE VISUALIZACION
+================================================================
+
+  OPCION A - pgAdmin 4:
+    Ya instalado con PostgreSQL 17.
+    Menu inicio -> pgAdmin 4
+    Agregar server con las credenciales de arriba.
+
+  OPCION B - pgweb (web ligera):
+    1. Descargar: https://github.com/sosedoff/pgweb/releases
+       Archivo: pgweb_windows_amd64.exe
+    2. Colocar en la carpeta db/
+    3. Ejecutar:
+       .\pgweb_windows_amd64.exe --bind=0.0.0.0 --listen=5000 ^
+         --host=localhost --user=postgres --pass=1379 --db=hospital_db
+    4. Abrir: http://localhost:5000
+
+  OPCION C - psql (terminal):
+    $env:PGPASSWORD="1379"; psql -U postgres -d hospital_db
+
+
+9. DBDIAGRAM (DBML) Y VISUALIZACION
+================================================================
+
+  He incluido un archivo DBML con nuestro esquema unificado en:
+    postgresql/schema.dbml
+
+  Para visualizarlo online con dbdiagram.io:
+    1. Abrir https://dbdiagram.io
+    2. Crear nuevo diagrama y pegar el contenido de `postgresql/schema.dbml`
+    3. Alternativamente, usar la CLI de dbdiagram si la tienes instalada.
+
+
+10. ACCESO DIRECTO DESDE `C:\\Program Files\\PostgreSQL\\17\\bin` (Windows)
+================================================================
+
+  Si estás en el prompt:
+    PS C:\\Program Files\\PostgreSQL\\17\\bin>
+
+  - Abrir `psql` y conectarte (te preguntará la contraseña):
+    .\\psql.exe -U postgres -d hospital_db
+
+  - O exportar la contraseña en la sesión PowerShell y conectarte sin prompt:
+    $env:PGPASSWORD = "1379"
+    .\\psql.exe -U postgres -d hospital_db
+
+  - Ejecutar un comando SQL directamente desde la carpeta bin:
+    .\\psql.exe -U postgres -d hospital_db -c "SELECT count(*) FROM persona;"
+
+  - Si prefieres usar pg_dump o pg_restore desde aquí, los ejecutables están disponibles
+    en la misma carpeta (`pg_dump.exe`, `pg_restore.exe`). Ejemplo de volcado:
+    .\\pg_dump.exe -U postgres -d hospital_db -F c -f ..\\backup_hospital.dump
+
+  Nota: si el servicio PostgreSQL no está iniciado, inicia el servicio como Administrador:
+    net start postgresql-x64-17
+
+
+11. NOTAS FINALES SOBRE LA ADAPTACION (Grupo 2 y Grupo 3)
+================================================================
+
+  - Grupo 3: provee los datos originales en formato PostgreSQL (COPY). Se importaron
+    las tablas base directamente y se respetaron tipos y valores originales cuando fue
+    posible. Algunas columnas se transformaron para respetar la normalizacion.
+
+  - Grupo 2: aporto los catalogos y tablas de extension (procedimientos, medicamentos,
+    pagos, historial, etc.). Estos se integraron como tablas separadas y referenciadas
+    por FK (sin duplicar datos entre tablas base y catalogos).
+
+  - Resultado: esquema unificado en 3NF, sin ciclos entre `persona` y `especialidad`.
+    Las transformaciones principales fueron:
+      * Eliminar `id_especialidad` de `persona`.
+      * Crear `personal` y `paciente` como roles (una persona puede ser paciente o personal).
+      * Mantener los catalogos del Grupo 2 como tablas independientes y usar FKs.
+
