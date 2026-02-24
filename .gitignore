@@ -1,5 +1,5 @@
 # Ignore embedded grupo2 repository directory (kept as external reference)
-grupo2/
+# grupo2/   <-- removed to allow including grupo2 in this repo
 
 # Python cache
 __pycache__/
