@@ -1,0 +1,190 @@
+@startuml
+title Modelo Hospitalario para Inteligencia de Negocios (Versión Final Optimizada)
+
+hide circle
+skinparam linetype ortho
+
+'' Versión actualizada del diagrama basada en `01_schema.sql`
+entity "persona" as persona {
+  * id_persona : BIGSERIAL (PK)
+  --
+  nombre : VARCHAR(150)
+  fecha_nacimiento : DATE
+  id_genero : SMALLINT (FK -> cat_genero)
+  telefono : VARCHAR(20)
+  zona_residencia : VARCHAR(80)
+  ciudad : VARCHAR(80)
+  es_personal : BOOLEAN
+}
+
+entity "paciente" as paciente {
+  * id_paciente : BIGSERIAL (PK)
+  id_persona : BIGINT (FK -> persona)
+}
+
+entity "personal" as personal {
+  * id_personal : BIGSERIAL (PK)
+  id_persona : BIGINT (FK -> persona)
+  id_especialidad : SMALLINT (FK -> cat_especialidad)
+  id_cargo : SMALLINT (FK -> cat_cargo)
+  id_turno : SMALLINT (FK -> cat_turno)
+  id_estado_disponibilidad : SMALLINT (FK -> cat_estado_disponibilidad)
+}
+
+entity "cita_medica" as cita_medica {
+  * id_cita : BIGSERIAL (PK)
+  id_paciente : BIGINT (FK -> paciente)
+  id_personal : BIGINT (FK -> personal)
+  fecha_cita : DATE
+  hora_cita : TIME
+  id_estado_cita : SMALLINT (FK -> cat_estado_cita)
+  orden_llegada : INT
+  hora_llegada : TIME
+  hora_atencion : TIME
+  temperatura : NUMERIC(4,1)
+  presion : VARCHAR(10)
+  tiempo_espera_minutos : INT <<GENERATED STORED>>
+}
+
+entity "pago" as pago {
+  * id_pago : BIGSERIAL (PK)
+  id_cita : BIGINT (FK -> cita_medica)
+  monto_total : NUMERIC(10,2)
+  id_metodo_pago : SMALLINT (FK -> cat_metodo_pago)
+  fecha_pago : DATE
+  id_estado_pago : SMALLINT (FK -> cat_estado_pago)
+}
+
+entity "diagnostico" as diagnostico {
+  * id_diagnostico : BIGSERIAL (PK)
+  id_cita : BIGINT (FK -> cita_medica)
+  descripcion : TEXT
+  codigo_cie10 : VARCHAR(10)
+  id_gravedad : SMALLINT (FK -> cat_gravedad)
+}
+
+entity "procedimiento_medico" as procedimiento_medico {
+  * id_procedimiento : BIGSERIAL (PK)
+  nombre : VARCHAR(120)
+  costo_base : NUMERIC(10,2)
+  tiempo_estimado_min : INT
+}
+
+entity "diagnostico_procedimiento" as diag_proc {
+  * id_diag_proc : BIGSERIAL (PK)
+  id_diagnostico : BIGINT (FK -> diagnostico)
+  id_procedimiento : BIGINT (FK -> procedimiento_medico)
+  costo_aplicado : NUMERIC(10,2)
+  tiempo_estimado_min : INT
+}
+
+entity "historial_clinico" as historial_clinico {
+  * id_historial : BIGSERIAL (PK)
+  id_paciente : BIGINT (FK -> paciente)
+  fecha_registro : DATE
+  id_tipo_registro : SMALLINT (FK -> cat_tipo_registro)
+  observaciones : TEXT
+}
+
+entity "medicamento" as medicamento {
+  * id_medicamento : BIGSERIAL (PK)
+  nombre_medicamento : VARCHAR(120)
+  stock_actual : INT
+  costo_unitario : NUMERIC(10,2)
+}
+
+entity "receta" as receta {
+  * id_receta : BIGSERIAL (PK)
+  id_diagnostico : BIGINT (FK -> diagnostico)
+  fecha_receta : DATE
+}
+
+entity "receta_detalle" as receta_detalle {
+  * id_receta_detalle : BIGSERIAL (PK)
+  id_receta : BIGINT (FK -> receta)
+  id_medicamento : BIGINT (FK -> medicamento)
+  dosis : VARCHAR(50)
+  cantidad : INT
+}
+
+' Relaciones principales
+paciente ||--o{ cita_medica : "tiene"
+persona ||--o{ paciente : "es"
+persona ||--o{ personal : "es"
+cita_medica ||--o| pago : "tiene"
+cita_medica ||--o| diagnostico : "genera"
+diagnostico ||--o{ diag_proc : "asocia"
+procedimiento_medico ||--o{ diag_proc : "es aplicado"
+diagnostico ||--o{ receta : "prescribe"
+receta ||--o{ receta_detalle : "contiene"
+medicamento ||--o{ receta_detalle : "suministra"
+paciente ||--o{ historial_clinico : "registra"
+
+' Catálogos (desde `01_schema.sql`)
+entity "cat_genero" as cat_genero {
+  * id_genero : SMALLSERIAL (PK)
+  nombre : VARCHAR(20)
+}
+
+entity "cat_especialidad" as cat_especialidad {
+  * id_especialidad : SMALLSERIAL (PK)
+  nombre : VARCHAR(100)
+  piso : VARCHAR(20)
+}
+
+entity "cat_cargo" as cat_cargo {
+  * id_cargo : SMALLSERIAL (PK)
+  nombre : VARCHAR(80)
+}
+
+entity "cat_turno" as cat_turno {
+  * id_turno : SMALLSERIAL (PK)
+  nombre : VARCHAR(30)
+}
+
+entity "cat_estado_disponibilidad" as cat_estado_disponibilidad {
+  * id_estado_disponibilidad : SMALLSERIAL (PK)
+  nombre : VARCHAR(40)
+}
+
+entity "cat_gravedad" as cat_gravedad {
+  * id_gravedad : SMALLSERIAL (PK)
+  nombre : VARCHAR(20)
+}
+
+entity "cat_estado_cita" as cat_estado_cita {
+  * id_estado_cita : SMALLSERIAL (PK)
+  nombre : VARCHAR(30)
+}
+
+entity "cat_metodo_pago" as cat_metodo_pago {
+  * id_metodo_pago : SMALLSERIAL (PK)
+  nombre : VARCHAR(30)
+}
+
+entity "cat_estado_pago" as cat_estado_pago {
+  * id_estado_pago : SMALLSERIAL (PK)
+  nombre : VARCHAR(30)
+}
+
+entity "cat_tipo_registro" as cat_tipo_registro {
+  * id_tipo_registro : SMALLSERIAL (PK)
+  nombre : VARCHAR(30)
+}
+
+' Relaciones a catálogos
+cat_genero ||--o{ persona : "clasifica"
+cat_especialidad ||--o{ personal : "pertenece"
+cat_cargo ||--o{ personal : "asigna"
+cat_turno ||--o{ personal : "turno"
+cat_estado_disponibilidad ||--o{ personal : "estado"
+cat_gravedad ||--o{ diagnostico : "gravedad"
+cat_estado_cita ||--o{ cita_medica : "estado"
+cat_metodo_pago ||--o{ pago : "método"
+cat_estado_pago ||--o{ pago : "estado"
+cat_tipo_registro ||--o{ historial_clinico : "tipo"
+
+hide circle
+skinparam linetype ortho
+
+@enduml
